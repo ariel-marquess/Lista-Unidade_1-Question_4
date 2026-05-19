@@ -1,4 +1,4 @@
-# Sistema de Gestão de Acervo "Biobliotech"
+# Sistema de Gestão de Acervo "Bibliotech"
    
 ### Contexto: 
 * Você foi contratado para desenvolver o módulo principal de uma biblioteca. Este módulo é responsável por gerenciar os livros e controlar os empréstimos.
