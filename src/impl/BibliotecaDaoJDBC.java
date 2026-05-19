@@ -19,51 +19,51 @@ public class BibliotecaDaoJDBC implements BibliotecaDao {
     }
 
     @Override
-    public void adicionar(Livro obj) {
-        PreparedStatement stmt = null;
+    public void closeConnection() throws SQLException {
+        if (this.conn != null) {
+            this.conn.close();
+        }
+    }
 
-        try {
-            stmt = conn.prepareStatement("INSERT INTO livro(titulo, autor, estaOcupado) VALUES (?, ?, ?)");
+    @Override
+    public void adicionar(Livro obj) throws SQLException, DbException {
+        PreparedStatement st;
 
-            stmt.setString(1, obj.getTitulo());
-            stmt.setString(2, obj.getAutor());
-            stmt.setBoolean(3, obj.isEstaEmprestado());
+        st = conn.prepareStatement(
+                "INSERT INTO livro(titulo, autor, estaOcupado) VALUES (?, ?, ?)",
+                Statement.RETURN_GENERATED_KEYS);
 
-            int row = stmt.executeUpdate();
-            if (row > 0) {
-                ResultSet rs = stmt.getGeneratedKeys();
+        st.setString(1, obj.getTitulo());
+        st.setString(2, obj.getAutor());
+        st.setBoolean(3, obj.isEstaEmprestado());
 
-                if (rs.next()) {
-                    obj.setId(rs.getInt(1));
-                }
-            } else {
-                throw new DbException("ERRO: sem linhas afetadas no banco de dados.");
+        int row = st.executeUpdate();
+        if (row > 0) {
+            ResultSet rs = st.getGeneratedKeys();
+
+            if (rs.next()) {
+                obj.setId(rs.getInt(1));
             }
-        } catch (SQLException e) {
-            throw new DbException(e.getMessage());
-        } finally {
-            DB.closeStatement(stmt);
+
+            DB.closeServices(st, rs);
+        } else {
+            DB.closeStatement(st);
+            throw new DbException("ERRO: sem linhas afetadas no banco de dados.");
         }
     }
 
     private Livro instantiateLivro(ResultSet rs) throws SQLException {
-        Livro livro = new Livro();
-        livro.setId(rs.getInt("id"));
-        livro.setTitulo(rs.getString("titulo"));
-        livro.setAutor(rs.getString("autor"));
-        livro.setEstaEmprestado(rs.getBoolean("estaOcupado"));
-
-        return livro;
+        return new Livro(rs.getInt("id"), rs.getString("titulo"), rs.getString("autor"), rs.getBoolean("estaOcupado"));
     }
 
     @Override
-    public List<Livro> buscar(String str, String operacao) throws SQLException, LivroNaoEncontradoException, InterruptedException {   // A operação revela se a pesquisa é por título ou por autor
+    public List<Livro> buscar(String str, char operacao) throws SQLException, LivroNaoEncontradoException, DbException {   // A operação revela se a pesquisa é por título ou por autor
         PreparedStatement ps;
         ResultSet rs;
 
-        if (operacao.equals("autor")) {
+        if (operacao == 'a') {
             ps = conn.prepareStatement("SELECT * FROM livro WHERE autor = ?");
-        } else if (operacao.equals("titulo")) {
+        } else if (operacao == 't') {
             ps = conn.prepareStatement("SELECT * FROM livro WHERE titulo = ?");
         } else {
             throw new LivroNaoEncontradoException();
@@ -79,13 +79,11 @@ public class BibliotecaDaoJDBC implements BibliotecaDao {
         }
 
         DB.closeServices(ps, rs);
-        Thread.sleep(500);
-
         return livros;
     }
 
     @Override
-    public void emprestar(Integer id) throws SQLException, EmprestimoInvalidoException, InterruptedException {    // Utilizo dessa forma, ao invés de utilizar o bloco try, para que a execução o controle de excessões seja excutado nas classes da pasta "application"
+    public void emprestar(Integer id) throws SQLException, EmprestimoInvalidoException, DbException {    // Utilizo dessa forma, ao invés de utilizar o bloco try, para que a execução o controle de excessões seja excutado nas classes da pasta "application"
         PreparedStatement ps;
         ResultSet rs;
 
@@ -93,30 +91,32 @@ public class BibliotecaDaoJDBC implements BibliotecaDao {
         ps.setInt(1, id);
         rs = ps.executeQuery();
 
-        if (rs.getInt("estaOcupado") == 0) {
-            ps = conn.prepareStatement("UPDATE livro SET estaOcupado = ? WHERE id = ?");
+        if (rs.next()) {
+            if (rs.getInt("estaOcupado") == 0) {
+                DB.closeStatement(ps);
+                ps = conn.prepareStatement("UPDATE livro SET estaOcupado = ? WHERE id = ?");
 
-            ps.setBoolean(1, true);
-            ps.setInt(2, id);
-            int row = ps.executeUpdate();
+                ps.setBoolean(1, true);
+                ps.setInt(2, id);
+                int row = ps.executeUpdate();
 
-            DB.closeServices(ps, rs);
-            Thread.sleep(500);     // Espera até que os recursos sejam realmente fechados
-
-            if (!(row > 0)) {
-                throw new DbException("ERRO: sem linhas afetadas no banco de dados.");
+                DB.closeServices(ps, rs);
+                if (!(row > 0)) {
+                    throw new DbException("ERRO: sem linhas afetadas no banco de dados.");
+                }
+            } else {
+                DB.closeServices(ps, rs);
+                throw new EmprestimoInvalidoException("livro ocupado");
             }
         } else {
             DB.closeServices(ps, rs);
-            Thread.sleep(500);    // Espera até que os recursos sejam realmente fechados
-
-            throw new EmprestimoInvalidoException("livro ocupado");
+            throw new DbException("Livro não encontrado com ID: " + id);
         }
 
     }
 
     @Override
-    public void devolver(Integer id) throws SQLException, InterruptedException {    // Mesma estrutura do método anterior
+    public void devolver(Integer id) throws SQLException, DbException {    // Mesma estrutura do método anterior
         PreparedStatement ps;
         ResultSet rs;
 
@@ -124,24 +124,40 @@ public class BibliotecaDaoJDBC implements BibliotecaDao {
         ps.setInt(1, id);
         rs = ps.executeQuery();
 
-        if (rs.getInt("estaOcupado") == 1) {
-            ps = conn.prepareStatement("UPDATE livro SET estaOcupado = ? WHERE id = ?");
+        if (rs.next()) {
+            if (rs.getInt("estaOcupado") == 1) {
+                DB.closeStatement(ps);
+                ps = conn.prepareStatement("UPDATE livro SET estaOcupado = ? WHERE id = ?");
 
-            ps.setBoolean(1, false);
-            ps.setInt(2, id);
-            int row = ps.executeUpdate();
+                ps.setBoolean(1, false);
+                ps.setInt(2, id);
+                int row = ps.executeUpdate();
 
-            DB.closeServices(ps, rs);
-            Thread.sleep(500);     // Espera até que os recursos sejam realmente fechados
-
-            if (!(row > 0)) {
-                throw new DbException("ERRO: sem linhas afetadas no banco de dados.");
+                DB.closeServices(ps, rs);
+                if (!(row > 0)) {
+                    throw new DbException("ERRO: sem linhas afetadas no banco de dados.");
+                }
+            } else {
+                DB.closeServices(ps, rs);   // Entendi a grande ajuda que o bloco finaly proporciona
+                throw new DbException("ERRO: o livro indicado não está emprestado.");
             }
         } else {
-            DB.closeServices(ps, rs);   // Entendi a grande ajuda que o bloco finaly proporciona
-            Thread.sleep(500);    // Espera até que os recursos sejas realmente fechados
-
-            throw new DbException("ERRO: o livro indicado não está emprestado.");
+            DB.closeServices(ps, rs);
+            throw new DbException("Livro não encontrado com ID: " + id);
         }
+    }
+
+    @Override
+    public List<Livro> listarAcervo() throws SQLException, DbException {
+        List<Livro> livros = new ArrayList<>();
+        Statement st = conn.createStatement();
+        ResultSet rs = st.executeQuery("SELECT * FROM livro");
+
+        while (rs.next()) {
+            livros.add(instantiateLivro(rs));
+        }
+
+        DB.closeServices(st, rs);
+        return livros;
     }
 }

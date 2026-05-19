@@ -10,6 +10,11 @@ create table livro (
     primary key (id)
 );
 
-insert into livro(titulo, autor, estaOcupado) values ('Assim Falou Zaratustra'), ('Nietzsche'), (true);
+insert into livro(titulo, autor, estaOcupado) values
+    ('Assim Falou Zaratustra', 'Nietzsche', true),
+    ('Angústia', 'Graciliano Ramos', false),
+    ('Irmãos Karamázov', 'Fiódor Dostoiévsk', false),
+    ('A Náusea', 'Jean-Paul Sartre', true),
+    ('A Hora da Estrela', 'Clarice Lispector', false);
 
 select * from livro;

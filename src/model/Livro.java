@@ -37,4 +37,11 @@ public class Livro {
     public void setEstaEmprestado(boolean estaEmprestado) {
         this.estaEmprestado = estaEmprestado;
     }
+
+    public Livro(int id, String titulo, String autor, boolean estaEmprestado) {
+        setId(id);
+        setTitulo(titulo);
+        setAutor(autor);
+        setEstaEmprestado(estaEmprestado);
+    }
 }
